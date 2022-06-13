@@ -1,0 +1,366 @@
+---
+title: "Association of clinical characteristics with heart failure"
+author: "Yongsheng Li"
+date: '`r format(Sys.Date())`'
+header-includes:
+- \usepackage[fontsize=12pt]{scrextend}
+mainfont: Times New Roman
+urlcolor: blue
+output:
+  pdf_document: 
+    toc: yes
+    toc_depth: 3
+    latex_engine: xelatex
+  html_document:
+    toc: yes
+    df_print: paged
+    fig_caption: yes
+    toc_float: yes
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results="hide", warning = FALSE, message=FALSE, fig.show = "hide")
+library(tidyverse)
+library(gtsummary)
+library(GGally)
+library(mfp)
+library(sjPlot)
+library(flextable)
+library(rrtable)
+library(interactions)
+source("group_smooth.R")
+source("logit_plot.R")
+source("plot_resid_lev_logistic.R")
+```
+
+## Introduction
+
+Cardiovascular diseases (CVDs) is the NO.1 cause of death globally, taking an estimated 17.9 million lives each year, which accounts for 31% of all deaths worldwide. Heart failure is a common event caused by CVDs. Most cardiovascular diseases can be prevented by addressing behavioral risk factors. In this study, we use heart-failure clinical data to explore its risk factors. 
+
+## Methods
+
+### Data source
+
+The heart-failure data source link is at [data source link](https://www.kaggle.com/andrewmvd/heart-failure-clinical-data?select=heart_failure_clinical_records_dataset.csv). This dataset consists of 299 patients with heart failure collected in 2015 with no missing data, including 8 clinical characteristics and 3 non-clinical characteristics including $age$(continuous), $smoking$(1=smoking,0=not), $sex$(1=woman,0=not). $heart\_failure$(1=Yes, 0=No) is our dependent variable. 8 clinical characteristics are as follows: 
+
+- $anaemia$: Decrease of red blood cells or hemoglobin (boolean)
+- $creatinine\_phosphokinase$: Level of the CPK enzyme in the blood (mcg/L)
+- $diabetes$: If the patient has diabetes (boolean)
+- $ejection\_fraction$: Percentage of blood leaving the heart at each contraction (percentage)
+- $high\_blood\_pressure$: If the patient has hypertension (boolean)
+- $platelets$: Platelets in the blood (kiloplatelets/mL)
+- $serum\_creatinine$: Level of serum creatinine in the blood (mg/dL)
+- $serum\_sodium$: Level of serum sodium in the blood (mEq/L)
+
+### Research objectives
+The aim of this study is to explore the potential association of these 8 clinical characteristics with heart failure. We also want to check if $age$, $smoking$, $sex$ are confounders and also if $sex$ is a meaningful effect modifier. 
+
+### Statistical analytic plan
+We firstly get the descriptive statistics to explore the data. Then we do linearity check for all the variables to determine the functional form of the variable with the dependent variable. Grouped smooth, fractional polynomials and LOESS plot methods are used to assess linearity and make possible transformations when necessary.
+
+
+For categorical variables in the data, we keep it unchanged. And for continuous variables, we keep it unchanged when they are linear, but convert them to categorical variables according to their quantiles or take the suggested form of fractional polynomials.
+
+
+For modelling process, first, we build a univariate logistic regression on each independent clinical variable to get its basic relationship with heart failure. Second, we build an  multivariate model using these 8 clinical characteristics to get the unadjusted model. Third, we check if $age$,$smoking$ or $sex$ is a potential confounder. The criteria for determining a confounder is when it causes more than 10% change to original coefficients and also sensibly able to be a cause to both our independent variables of interest and dependent variable. The identified confounders will be included in the model to form the adjusted model. Fourth, we check if $sex$ is an effect modifier(interaction term). A significant interaction term is identified when the wald test for the coefficient is statistically significant.  Then, we get the final model, which includes both meaningful confounders and significant effect modifiers. 
+
+After getting the final model, we do Hosmer-Lemeshow GOF Test to evaluate the goodness of fit and do some model diagnostics to identify possible influential points. Last but not least, we report our model and give some conclusions.
+    
+### Statistical criterias
+
+All the statistical significances are determined by p-value<0.05.  A rule of thumb for pseudo-$R^2$ between of 0.2 to 0.4 indicates excellent fit. 
+    
+### Code link
+
+The complete code of this study can be found at [compelte code link](https://github.com/yungson/R-data-science/tree/main/heart-failure). 
+
+## Results
+
+### Descriptive statistics
+
+
+The descriptive statistics is in Table 1. The data has 299 observations with no missing data and 203 of them have heart failure. $age$, $creatinine\_phosphokinase$, $ejection\_fraction$, $serum\_creatinine$, $serum\_sodium$ are continuous variables and others are binary. The p-value is provided to compare the heart-failure group and non-heart-failure group for each variable, we can see some of them are significant. 
+
+```{r, results='hold'}
+# basic summary statistics and variable preprocessing
+df = read_csv("heart_failure_clinical_records_dataset.csv",show_col_types = FALSE)
+df = select(df, -c("time"))
+colnames(df)[12] = "heart_failure"
+tbl_summary(df,missing="ifany",by="heart_failure") %>% add_p() %>% add_n() %>% bold_p() %>% modify_caption("Descriptive statistics of the variables") %>% as_flex_table()  %>% width(width=c(1.9,0.5,1.3,1.3,0.5))
+```
+
+
+
+```{r}
+# age: 
+mfp(heart_failure~fp(age), data=df, family=binomial)
+# smoking is binary no need to check
+```
+
+
+
+```{r}
+# check linearity for creatinine_phosphokinase
+group_smooth("creatinine_phosphokinase","heart_failure", df, q=4)
+```
+
+```{r}
+mfp(heart_failure~fp(creatinine_phosphokinase), data=df, family=binomial)
+```
+
+```{r}
+logit_plot("creatinine_phosphokinase","heart_failure", df)
+```
+
+
+
+
+
+```{r, results="hide",fig.show='hide'}
+# ejection_fraction
+group_smooth("ejection_fraction","heart_failure", df, q=4)
+```
+
+```{r, results="hide",fig.show='hide'}
+mfp(heart_failure~fp(ejection_fraction), data=df, family=binomial)
+```
+
+```{r, results="hide",fig.show='hide'}
+logit_plot("ejection_fraction","heart_failure", df)
+```
+
+```{r,results='hide', fig.show='hide'}
+ggplot(data=df, aes(x=ejection_fraction))+geom_histogram()
+```
+
+```{r,results='hide',fig.show='hide'}
+#### platelets
+group_smooth("platelets","heart_failure", df, q=4)
+```
+
+```{r, results='hide',fig.show='hide'}
+mfp(heart_failure~fp(platelets), data=df, family=binomial)
+```
+
+```{r,results='hide',fig.show='hide'}
+logit_plot("platelets","heart_failure", df)
+```
+
+
+
+```{r, results='hide',fig.show='hide'}
+group_smooth("serum_creatinine","heart_failure", df, q=4)
+```
+
+```{r, results="hide",fig.show='hide'}
+mfp(heart_failure~fp(serum_creatinine), data=df, family=binomial)
+```
+
+
+```{r,results='hide',fig.show='hide'}
+group_smooth("serum_sodium","heart_failure", df, q=10)
+```
+
+```{r, results="hide",fig.show='hide'}
+mfp(heart_failure~fp(serum_sodium), data=df, family=binomial)
+```
+
+
+
+
+```{r, results="hide"}
+df$sex = factor(df$sex)
+df$anaemia = factor(df$anaemia)
+df$diabetes = factor(df$diabetes)
+df$high_blood_pressure = factor(df$high_blood_pressure)
+df$ejection_fraction.q = cut(df$ejection_fraction,
+              breaks = quantile(df$ejection_fraction, probs = (0:4)/4, na.rm=T),
+              include.lowest = T)
+df$platelets_kilo = df$platelets/1000
+df$serum_creatinine.q = cut(df$serum_creatinine,
+              breaks = quantile(df$serum_creatinine, probs = (0:4)/4, na.rm=T),
+              include.lowest = T)
+```
+
+
+### Linearity check
+
+The assumption for logistic regression is variable linearity. We do not need to check linearity for binary variables $anaemia$,  $diabetes$ and $high\_blood\_pressure$ . For other variables, we use group smooth, fractional polynomial, LOESS plot methods to assess linearity and make possible transformations when necessary. We use fractional polynomials to determine the functional form of covariate $age$ and do not check for $smoking$ and $sex$. The checking results and corresponding variable transformation results is in Table 2.  
+
+```{r, results="hold"}
+variables = c("age","anaemia", "creatinine_phosphokinase","diabetes",
+             "ejection_fraction","high_blood_pressure",
+             "platelets","serum_creatinine","serum_sodium","sex","smoking")
+linearity = c("linear","binary","linear","binary",
+              "nonlinear","binary",
+              "linear", "nonlinear","linear","binary","binary")
+tranformation = c("-","-","-","-",
+                  "dummification from quantile of 4","-",
+                  "divide by 1000","dummification from quantile of 4","-","-","-")
+new_variable = c("-","-","-","-",
+                  "ejection_fraction.q","-",
+                  "platelet_kilo","serum_creatinine.q","-","-","-")
+tibble(variables,linearity,tranformation, new_variable) %>% flextable() %>% set_caption("Linearity check and variable transformation") %>% width(width=c(1.8,1,1.8,1.8))
+```
+
+### Univariate logistic regression
+
+We do univariate logistic regression on each of these variables to get the simple relationship of Y on each variable X. The results are in Table 3. We can see $age$, $ejection\_fraction.q$, $serum\_creatinine.q$, $serum\_sodium$ are significant, to which we need to pay attention.
+
+```{r, results="hold"}
+df %>%
+  select(age,anaemia,creatinine_phosphokinase,diabetes,
+         ejection_fraction.q,high_blood_pressure,
+         platelets_kilo,serum_creatinine.q,serum_sodium,
+         sex, smoking,heart_failure) %>%
+  tbl_uvregression(
+    method = glm,
+    y = heart_failure,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    pvalue_fun = ~style_pvalue(.x, digits = 2)
+  ) %>%
+  add_global_p(quiet=TRUE) %>%  # add global p-value 
+  add_nevent() %>%    # add number of events of the outcome
+  #add_q(method = "fdr") %>%         # adjusts global p-values for multiple testing
+  bold_p() %>%        # bold p-values under a given threshold (default 0.05)
+  #bold_p(t = 0.10, q = TRUE) %>% # now bold q-values under the threshold of 0.10
+  bold_labels() %>%
+  modify_caption("simple univariate relationship of Y with each X") %>% as_flex_table()
+```
+
+
+
+```{r, results="hide"}
+
+### Unadjusted multivariable model
+#The univariate relationship may not be accurate. So we can put the 8 clinical characteristics variables into a multivariable model.
+unadjusted = glm(heart_failure~anaemia+
+                   creatinine_phosphokinase+
+                   diabetes+
+                   ejection_fraction.q+
+                   high_blood_pressure+
+                   platelets_kilo+
+                   serum_creatinine.q+
+                   serum_sodium, data=df, family=binomial)
+#summary(unadjusted)
+```
+
+### Confounding checking
+
+We found that $age$ and $sex$ can cause many coefficients to change more than 10%, whereas $smoking$ causes almost no changes to the coefficients.  In addition, both $age$ and $sex$ are sensibly causes for the clinical characterstics and for risk of heart failure. Therefore, we will include $age$ and $sex$ as meaningful confounders into model. Note that $age$ can even cause the coefficient of diabetes to have a sign change.  
+
+```{r, results='hold'}
+age_adjusted = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+
+                   high_blood_pressure+platelets_kilo+serum_creatinine.q+serum_sodium+age, data=df, family=binomial)
+
+smoking_adjusted = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+
+                   high_blood_pressure+platelets_kilo+serum_creatinine.q+serum_sodium+smoking, data=df, family=binomial)
+
+sex_adjusted = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+
+                   high_blood_pressure+platelets_kilo+serum_creatinine.q+serum_sodium+sex, data=df, family=binomial)
+
+result= tibble(
+  coefficients_change = names(coefficients(unadjusted)[2:13]),
+  "age(%)"=round(100*(coefficients(age_adjusted)[2:13]-coefficients(unadjusted)[2:13])/coefficients(unadjusted)[2:13],2),
+  "smoking(%)"=round(100*(coefficients(smoking_adjusted)[2:13]-coefficients(unadjusted)[2:13])/coefficients(unadjusted)[2:13],2),
+  "sex(%)"=round(100*(coefficients(sex_adjusted)[2:13]-coefficients(unadjusted)[2:13])/coefficients(unadjusted)[2:13],2))
+flextable(result,cwidth = 1.5) %>% bold(i = ~ abs(`age(%)`) >10, j="age(%)") %>% bold(i = ~ abs(`smoking(%)`) >10, j="smoking(%)") %>% bold(i = ~ abs(`sex(%)`) >10, j="sex(%)") %>% set_caption("Parameter changes after incorporating potential confounders") 
+```
+
+### Interaction checking
+
+With $age$ and $sex$ included as confounders, we get the adjusted model. We further check if $sex$ is a significant effect modifier. After putting interaction term of $sex$ with each of these 8 clinical characteristics into the adjusted model respectively, the wald test result of each interaction term shows that $sex$ interacts with $platelets\_kilo$(z-statistic=-2.143, p-value=0.032140) and $serum\_creatinine.q$(z-statistic=2.046, pvalue=0.040746 for (0.9,1.1]; z-statistic=1.490, p-value=0.136233 for (1.1,1.4]; z-statistic=4.497, pvalue=6.91e-06 for (1.4,9.4]) significantly on the risk of heart failure. Therefore we will include these interaction terms to get the final model.
+
+```{r, results="hide"}
+m1 = glm(heart_failure~anaemia*sex+creatinine_phosphokinase+diabetes+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m2 = glm(heart_failure~anaemia+creatinine_phosphokinase*sex+diabetes+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m3 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes*sex+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m4 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q*sex+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m5 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+high_blood_pressure*sex+
+                   platelets_kilo+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m6 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo*sex+serum_creatinine.q+serum_sodium+age+sex, data=df, family=binomial)
+m7 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q*sex+serum_sodium+age+sex, data=df, family=binomial)
+m8 = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+high_blood_pressure+
+                   platelets_kilo+serum_creatinine.q+serum_sodium*sex+age+sex, data=df, family=binomial)
+# extract_interaction = function(model){
+#   result = summary(model)$coefficients
+#   interaction_term = rownames(result)[stringr::str_detect(rownames(result),":")]
+#   result[interaction_term, c("Estimate","Pr(>|z|)")]
+# }
+# extract_interaction(m6)
+summary(m6)
+```
+
+```{r}
+summary(m7)
+```
+
+
+
+
+### Model goodness of fit and diagnostics
+
+```{r}
+final_model = glm(heart_failure~anaemia+creatinine_phosphokinase+diabetes+ejection_fraction.q+
+                    high_blood_pressure+platelets_kilo*sex+serum_creatinine.q*sex+serum_sodium+age+sex, data=df, family=binomial)
+gof = ResourceSelection::hoslem.test(final_model$y, fitted(final_model), g=20)
+# ResourceSelection::hoslem.test(unadjusted$y, fitted(unadjusted), g=20)%>%  {cbind(
+#     .$observed,
+#     .$expected
+#   )}
+summary(final_model)
+```
+
+
+```{r}
+exp(-0.0073581)*exp(0.0085264)
+```
+
+
+```{r, fig.show='hold'}
+plot_resid_lev_logistic(final_model)
+```
+
+The pseudo-$R^2$ is `r DescTools::PseudoR2(final_model)`, indicating the final model is rather well. The Hosmer-Lemeshow GOF Test shows no significant departure from goodness of fit(statistic=`r gof$statistic`, p-value=`r gof$p.value`). In addition, we can see there are no influential points based the Pearson's-Leverage plot from the final model . 
+
+## Conclusion
+The final model is as follows:
+```{r, results="hold"}
+final_model %>% tbl_regression(exponentiate = TRUE) %>% bold_labels() %>% bold_p() %>% modify_caption("Results of the final multivariable model ") %>%as_flex_table()
+```
+
+Our final multivariable logistic regression model included $anaemia$ vs non-anaemia,$creatinine$ $\_phosphokinase$, $diabetes$ vs no-diabetes, $ejection\_fraction$ quantile(4 categories), $high\_blood\_pressure$ vs non-high_blood_pressure, $platelets$(in kilos), $sex$(woman vs man), $serum\_creatinine$ quantile(4 categories), $serum\_sodium$, $age$, $platelets*sex$ interactions, $serum\_creatinine.q*sex$ interactions.
+
+We found that wald tests for $anaemia$(p-value=0.2), $diabetes$(p-value>0.9), $high\_blood\_pressure$(p-value=0.12), $serum\_sodium$(p-value=0.3) are all non-significant. Therefore we can say they have no effect on the risk of heart failure. The interesting result is that $creatinine\_phosphokinase$ has a p-value of 0.032 but OR=1, indicating $creatinine\_phosphokinase$ has almost zero effect on the risk of heart failure.
+
+We found that those in higher ejection fraction quantile categories have lower odds of heart failure compared to those in category [14,30]: OR=0.23, 95%CI=[0.10, 0.48] for (30,38]; OR=0.11, 95%CI=[0.04, 0.27] for category (38,45]; OR=0.17, 95%CI=[0.07, 0.42] for (45,80] respectively, with all p-values<0.001. As a confounder, one unit increase in age will cause 1.06 times as likely as before to have heart failure(OR=1.06, 95%CI=[1.03, 1.09],p-value<0.001). However, $sex$ do not have statistically significant effect on risk of heart failure.
+
+
+For woman($sex=1$), per 1000 unit increase in platelets will make it `r exp(-0.0073581+0.0085264)` times as likely as before to have heart failure(calculated from raw coefficients). For man($sex=0$), per 1000 unit increase in platelets will make it 99% as likely as before to have heart failure. Note that this is only per 1000 unit increase, and platelets can vary in a broader range to cause a larger effect on risk of heart failure.
+
+When $sex=0$, namely for man, those in higher serum creatinine quantile categories have higher odds of heart failure than those in category[0.5,0.9]: OR=7.40, 95%CI=[1.39, 59.9], p-value=0.030 for (0.9,1.1]; OR=4.73, 95%CI=[0.81, 40.4],p-value=0.11 for (1.1,1.4], but nonsignificant; OR=47.4, 95%CI=[8.46, 428], pvalue<0.001 for (1.4,9.4]. However, for woman these odds ratios are completely different: OR=`r round(exp(2.0017791-1.5571308),2)`,`r round(exp(1.5537520-1.1808352),2)`, `r round(exp(3.8586270-2.4572291),2)`, respectively for (0.9,1.1], (1.1,1.4], (1.4,9.4] compared to [0.5,0.9], calculated from original coefficients. This is a very interesting result. It means that serum creatinine will generally introduce more risk of heart failure for man than for woman(both compared to the [0.5,0.9] base category). Figure 1 shows the details of the interaction.
+
+   
+```{r, fig.cap="sex and serum_creatinine interaction on the risk of heart failure", fig.show="hold"}
+library(interactions)
+cat_plot(final_model, pred = serum_creatinine.q, modx = sex)
+```
+
+
+## References
+- https://www.danieldsjoberg.com/gtsummary/
+- https://cran.r-project.org/web/packages/gtsummary/vignettes/tbl_summary.html
+- https://www.danieldsjoberg.com/gtsummary/articles/tbl_regression.html
+- https://bookdown.org/yihui/rmarkdown/html-document.html
+- https://www.danieldsjoberg.com/gtsummary/reference/modify.html
+
+
+
